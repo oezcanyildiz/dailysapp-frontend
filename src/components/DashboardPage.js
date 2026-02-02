@@ -6,175 +6,172 @@ import { getTodosByDate, createTodo, deleteTodo, toggleTodoStatus } from '../Ser
 import { logout, getCurrentUser } from '../Services/authService';
 
 // Helper to get local date string YYYY-MM-DD
-// Moved outside or defined as stable function to avoid dependency issues
+// Defined outside component to be stable
 const getLocalDateString = (date) => {
     const yyyy = date.getFullYear();
-    const DashboardPage = () => {
-        // Helper to get local date string YYYY-MM-DD
-        // Moved inside the component to be accessible, but before state to avoid re-creation issues with initial state
-        const getLocalDateString = (date) => {
-            const yyyy = date.getFullYear();
-            const mm = String(date.getMonth() + 1).padStart(2, '0');
-            const dd = String(date.getDate()).padStart(2, '0');
-            return `${yyyy}-${mm}-${dd}`;
-        };
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+};
 
-        const [todos, setTodos] = useState([]);
-        const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+const DashboardPage = () => {
+    const [todos, setTodos] = useState([]);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-        // Initial state needs today
-        const [selectedDate, setSelectedDate] = useState(() => getLocalDateString(new Date()));
-        const [weekDates, setWeekDates] = useState([]);
+    // Initial state needs today
+    const [selectedDate, setSelectedDate] = useState(() => getLocalDateString(new Date()));
+    const [weekDates, setWeekDates] = useState([]);
 
-        const user = getCurrentUser();
-        const navigate = useNavigate();
+    const user = getCurrentUser();
+    const navigate = useNavigate();
 
-        // Define loadTodos BEFORE useEffect that uses it
-        const loadTodos = async (date) => {
+    // Define loadTodos BEFORE useEffect that uses it
+    const loadTodos = async (date) => {
+        try {
+            const data = await getTodosByDate(date);
+            // Ensure data is array
+            setTodos(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error('Error loading todos:', error);
+            setTodos([]);
+        }
+    };
+
+    useEffect(() => {
+        // Generate 7 days centered on TODAY
+        const todayObj = new Date();
+        const dates = [];
+        for (let i = -3; i <= 3; i++) {
+            const d = new Date(todayObj);
+            d.setDate(todayObj.getDate() + i);
+            dates.push({
+                dateObj: d,
+                dateString: getLocalDateString(d),
+                dayName: d.toLocaleDateString('de-DE', { weekday: 'short' }),
+                dayNum: d.getDate()
+            });
+        }
+        setWeekDates(dates);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        if (selectedDate) {
+            loadTodos(selectedDate);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedDate]);
+
+    const handleCreateTodo = async (todoData) => {
+        try {
+            await createTodo(todoData.title, todoData.description, todoData.date, todoData.dueTime);
+            // Refresh only if we are on the date where we created the todo
+            if (todoData.date === selectedDate) {
+                await loadTodos(selectedDate);
+            }
+            setIsAddModalOpen(false);
+        } catch (error) {
+            console.error('Error creating todo:', error);
+            alert('Fehler beim Erstellen des Todos');
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (window.confirm('Möchten Sie dieses Todo wirklich löschen?')) {
             try {
-                const data = await getTodosByDate(date);
-                setTodos(Array.isArray(data) ? data : []);
+                await deleteTodo(id);
+                setTodos(todos.filter(t => t.id !== id));
             } catch (error) {
-                console.error('Error loading todos:', error);
-                setTodos([]); // Clear todos on error
+                console.error('Error deleting todo:', error);
             }
-        };
+        }
+    };
 
-        useEffect(() => {
-            // Generate 7 days centered on TODAY
-            const todayObj = new Date();
-            const dates = [];
-            for (let i = -3; i <= 3; i++) {
-                const d = new Date(todayObj);
-                d.setDate(todayObj.getDate() + i);
-                dates.push({
-                    dateObj: d,
-                    dateString: getLocalDateString(d),
-                    dayName: d.toLocaleDateString('de-DE', { weekday: 'short' }),
-                    dayNum: d.getDate()
-                });
-            }
-            setWeekDates(dates);
-            // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, []); // Empty dependency array is intended here as we only want to calculate this once on mount
+    const handleToggle = async (id, currentDoneStatus) => {
+        try {
+            await toggleTodoStatus(id, currentDoneStatus);
+            setTodos(todos.map(t =>
+                t.id === id ? { ...t, done: !currentDoneStatus } : t
+            ));
+        } catch (error) {
+            console.error('Error toggling status:', error);
+            loadTodos(selectedDate);
+        }
+    };
 
-        useEffect(() => {
-            if (selectedDate) {
-                loadTodos(selectedDate);
-            }
-            // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, [selectedDate]); // selectedDate is a primitive, so it's stable
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
 
-        const handleCreateTodo = async (todoData) => {
-            try {
-                await createTodo(todoData.title, todoData.description, todoData.date, todoData.dueTime);
-                // Refresh only if we are on the date where we created the todo
-                if (todoData.date === selectedDate) {
-                    await loadTodos(selectedDate);
-                }
-                setIsAddModalOpen(false);
-            } catch (error) {
-                console.error('Error creating todo:', error);
-                alert('Fehler beim Erstellen des Todos');
-            }
-        };
-
-        const handleDelete = async (id) => {
-            if (window.confirm('Möchten Sie dieses Todo wirklich löschen?')) {
-                try {
-                    await deleteTodo(id);
-                    setTodos(todos.filter(t => t.id !== id));
-                } catch (error) {
-                    console.error('Error deleting todo:', error);
-                }
-            }
-        };
-
-        const handleToggle = async (id, currentDoneStatus) => {
-            try {
-                await toggleTodoStatus(id, currentDoneStatus);
-                setTodos(todos.map(t =>
-                    t.id === id ? { ...t, done: !currentDoneStatus } : t
-                ));
-            } catch (error) {
-                console.error('Error toggling status:', error);
-                loadTodos(selectedDate);
-            }
-        };
-
-        const handleLogout = () => {
-            logout();
-            navigate('/login');
-        };
-
-        return (
-            <div className="dashboard-container">
-                <header className="dashboard-header glass" style={{ padding: '1rem', borderRadius: 'var(--radius)', marginBottom: '2rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <div>
-                            <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Hallo, {user?.name || 'Benutzer'}</h1>
-                            <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)' }}>Deine Daily's für <span style={{ fontWeight: 'bold' }}>{new Date(selectedDate).toLocaleDateString('de-DE')}</span></p>
-                        </div>
-                        <button onClick={handleLogout} className="btn-secondary">
-                            Abmelden
-                        </button>
+    return (
+        <div className="dashboard-container">
+            <header className="dashboard-header glass" style={{ padding: '1rem', borderRadius: 'var(--radius)', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <div>
+                        <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Hallo, {user?.name || 'Benutzer'}</h1>
+                        <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)' }}>Deine Daily's für <span style={{ fontWeight: 'bold' }}>{new Date(selectedDate).toLocaleDateString('de-DE')}</span></p>
                     </div>
-
-                    {/* Date Strip */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-                        {weekDates.map((day) => {
-                            const isSelected = day.dateString === selectedDate;
-                            const isToday = day.dateString === getLocalDateString(new Date());
-                            return (
-                                <div
-                                    key={day.dateString}
-                                    onClick={() => setSelectedDate(day.dateString)}
-                                    className={isSelected ? 'glass' : ''}
-                                    style={{
-                                        flex: 1,
-                                        minWidth: '60px',
-                                        textAlign: 'center',
-                                        padding: '0.8rem 0.2rem',
-                                        borderRadius: '12px',
-                                        cursor: 'pointer',
-                                        backgroundColor: isSelected ? 'rgba(255,255,255, 0.2)' : 'rgba(255,255,255, 0.05)',
-                                        border: isSelected ? '1px solid rgba(255,255,255,0.4)' : '1px solid transparent',
-                                        transition: 'all 0.2s',
-                                        opacity: isSelected ? 1 : 0.7
-                                    }}
-                                >
-                                    <div style={{ fontSize: '0.8rem', marginBottom: '0.2rem', fontWeight: isToday ? 'bold' : 'normal', color: isToday ? 'var(--primary)' : 'inherit' }}>
-                                        {isToday ? 'Heute' : day.dayName}
-                                    </div>
-                                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
-                                        {day.dayNum}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </header>
-
-                <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
-                    <button onClick={() => setIsAddModalOpen(true)} className="btn-primary">
-                        + Neues Daily
+                    <button onClick={handleLogout} className="btn-secondary">
+                        Abmelden
                     </button>
                 </div>
 
-                <TodoList
-                    todos={todos}
-                    onDelete={handleDelete}
-                    onToggle={handleToggle}
-                />
+                {/* Date Strip */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
+                    {weekDates.map((day) => {
+                        const isSelected = day.dateString === selectedDate;
+                        const isToday = day.dateString === getLocalDateString(new Date());
+                        return (
+                            <div
+                                key={day.dateString}
+                                onClick={() => setSelectedDate(day.dateString)}
+                                className={isSelected ? 'glass' : ''}
+                                style={{
+                                    flex: 1,
+                                    minWidth: '60px',
+                                    textAlign: 'center',
+                                    padding: '0.8rem 0.2rem',
+                                    borderRadius: '12px',
+                                    cursor: 'pointer',
+                                    backgroundColor: isSelected ? 'rgba(255,255,255, 0.2)' : 'rgba(255,255,255, 0.05)',
+                                    border: isSelected ? '1px solid rgba(255,255,255,0.4)' : '1px solid transparent',
+                                    transition: 'all 0.2s',
+                                    opacity: isSelected ? 1 : 0.7
+                                }}
+                            >
+                                <div style={{ fontSize: '0.8rem', marginBottom: '0.2rem', fontWeight: isToday ? 'bold' : 'normal', color: isToday ? 'var(--primary)' : 'inherit' }}>
+                                    {isToday ? 'Heute' : day.dayName}
+                                </div>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
+                                    {day.dayNum}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </header>
 
-                {isAddModalOpen && (
-                    <AddTodo
-                        onClose={() => setIsAddModalOpen(false)}
-                        onAdd={handleCreateTodo}
-                    />
-                )}
+            <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setIsAddModalOpen(true)} className="btn-primary">
+                    + Neues Daily
+                </button>
             </div>
-        );
-    };
 
-    export default DashboardPage;
+            <TodoList
+                todos={todos}
+                onDelete={handleDelete}
+                onToggle={handleToggle}
+            />
+
+            {isAddModalOpen && (
+                <AddTodo
+                    onClose={() => setIsAddModalOpen(false)}
+                    onAdd={handleCreateTodo}
+                />
+            )}
+        </div>
+    );
+};
+
+export default DashboardPage;
